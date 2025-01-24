@@ -8,3 +8,6 @@
 虽然使用了A*算法,但是部分四阶和五阶求解还是会出现内存爆炸现象.待优化
 #
 ### 欢迎各路大神指教.
+
+![image](https://github.com/user-attachments/assets/33a8ec46-b188-4fb0-b1c2-21ce22c0d656)
+
