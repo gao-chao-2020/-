@@ -772,9 +772,13 @@
         <p>游戏结束禁止移动。</p>
         <p>优化界面显示。</p>
         <h5>2025-01-23 v4.0发布</h5>
+        <p>增加A*算法自动解题功能。</p>
+        <p>增加解题计时器显示功能。</p>
+        <p>增加取消解题功能。</p>
         <p>增加逆序数奇偶性验证，随机题目检查是否可解题目。</p>
         <p>增加完成胜利动画效果。</p>
         <p>修复随机题目完成回放移动错误。</p>
+        <p>优化界面显示。</p>
         `;
     helpContents.appendChild(helpContent);
   }
@@ -800,6 +804,7 @@
   /**
    * 自动求解入口函数
    */
+
   function autoSolve() {
     if (isSolving) return; // 防止重复点击
 
@@ -852,7 +857,6 @@
           resolve(null);
           return;
         }
-
         // 此处为原有求解逻辑（需拆分循环检查取消标志）
         // 开始时间
         const startTime = new Date().getTime();
@@ -860,6 +864,8 @@
         // 结束时间
         const endTime = new Date().getTime();
         console.log(`求解耗时：${(endTime - startTime) / 1000}秒`);
+
+        // 计时器结束
         resolve(solution);
       }, 100);
     });
@@ -1053,20 +1059,17 @@
     const openSet = new PriorityQueue();
     openSet.push({ cost: startState.cost, state: startState });
     const closedSet = new Set();
-
+    let current = null;
     while (!openSet.isEmpty() && !cancelRequested) {
-      const current = openSet.pop().state;
-
+      current = openSet.pop().state;
       if (JSON.stringify(current.board) === JSON.stringify(goalBoard)) {
         return current;
       }
 
-      closedSet.add(current.board.join(","));
+      closedSet.add(current.board.join(""));
 
       for (const child of current.generateChildren()) {
-        const childKey = child.board.join(",");
-        if (closedSet.has(childKey)) continue;
-
+        if (closedSet.has(child.board.join(""))) continue;
         openSet.push({ cost: child.cost, state: child });
       }
     }
