@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>华容道游戏</title>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="button-group">
+        <button class="button" onclick="selectButton(this, 3)">3阶</button>
+        <button class="button selected" onclick="selectButton(this, 4)">4阶</button>
+        <button class="button" onclick="selectButton(this, 5)">5阶</button>
+      </div>
+      <div class="button-group-tools">
+        <button class="button" onclick="reset()">重置</button>
+        <button class="button" onclick="refresh()">随机</button>
+        <!-- <button class="button" onclick="memory()">记忆</button>  -->
+        <button class="button" onclick="memoryList()">记忆</button>
+        <button class="button" onclick="recordList()">回放</button>
+        <button class="button" onclick="custom()">自定义</button>
+        <button class="button" onclick="autoSolve()">自动</button>
+      </div>
+      <div class="button-group-tools"></div>
+      <div class="timeDisplay">
+        <div id="timerDisplay">00:00:00</div>
+        <div id="timesDisplay">0</div>
+        <div class="helpDiv" onclick="showHelp()">?</div>
+      </div>
+      <div id="memoryList" class="memoryList"></div>
+      <div id="myModal" class="m1odal" style="display: none">
+        <div class="nameDiv">名称:<input id="customName" type="text" /></div>
+        <div id="modalContent"></div>
+        <div id="num-button-group"></div>
+        <div class="save-button-group">
+          <!-- <button class="button" onclick="cancel()">取消</button>  -->
+          <button class="button" onclick="save()">保存</button>
+        </div>
+      </div>
+      <div id="board"></div>
+      <div id="helpContents" class="helpContents">
+        <div id="helpHeader" class="helpHeader">
+          <span class="closeBtn" onclick="closeHelp()">×</span>
+          <h3>帮助</h3>
+        </div>
+        <div id="helpContent" class="helpContent"></div>
+      </div>
+      <div id="recordList" class="recordList"></div>
+    </div>
+    <div id="victoryText"></div>
+    <canvas id="fireworkCanvas"></canvas>
+    <!-- 添加加载提示 -->
+    <div id="loading">
+      <div class="spinner"></div>
+      <div>计算中...</div>
+      <button class="cancel-btn" onclick="cancelSolve()">取消</button>
+    </div>
+  </body>
+</html>
+
+<script>
+  const boardElement = document.getElementById("board");
+
+  let record = [];
+  let pieceSize = 70;
+  let size = 4;
+  let emptyIndex = 15;
+  let piecesOld = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, null];
+  let pieces = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, null];
+
+  function startRenderBoard() {
+    clearInterval(intervalIdRecord);
+    record = [];
+    document.getElementById("board").classList.remove("no-click");
+    document.getElementById("memoryList").style.display = "none";
+    document.getElementById("myModal").style.display = "none";
+    document.getElementById("board").style.display = "grid";
+    document.getElementById("recordList").style.display = "none";
+    renderBoard();
+  }
+
+  function renderBoard() {
+    boardElement.innerHTML = "";
+    pieces.forEach((piece, index) => {
+      const pieceElement = document.createElement("div");
+      pieceElement.className = "piece" + (piece === null ? " empty" : "");
+      pieceElement.textContent = piece !== null ? piece : "";
+      boardElement.style.gridTemplateColumns = `repeat(${size}, ${pieceSize}px)`;
+      boardElement.style.gridTemplateRows = `repeat(${size}, ${pieceSize}px)`;
+      if (index !== emptyIndex) {
+        pieceElement.onclick = () => movePiece(index);
+      }
+      boardElement.appendChild(pieceElement);
+    });
+  }
+
+  function movePiece(index) {
+    const row = Math.floor(index / size);
+    const col = index % size;
+    const emptyRow = Math.floor(emptyIndex / size);
+    const emptyCol = emptyIndex % size;
+    if (index != emptyIndex && (row === emptyRow || col === emptyCol)) {
+      startTimer();
+      timesDisplay.textContent = parseInt(timesDisplay.textContent) + 1;
+      if (row === emptyRow) {
+        if (col < emptyCol) {
+          for (let i = col; i < emptyCol; i++) {
+            pieces[emptyIndex - (i - col)] = pieces[emptyIndex - (i - col) - 1];
+          }
+          pieces[emptyIndex - (emptyCol - col)] = null;
+          emptyIndex = emptyIndex - (emptyCol - col);
+        } else {
+          for (let i = emptyCol; i < col; i++) {
+            pieces[emptyIndex + (i - emptyCol)] = pieces[emptyIndex + (i - emptyCol) + 1];
+          }
+          pieces[emptyIndex + (col - emptyCol)] = null;
+          emptyIndex = emptyIndex + (col - emptyCol);
+        }
+      }
+      if (col === emptyCol) {
+        if (row < emptyRow) {
+          for (let i = row; i < emptyRow; i++) {
+            pieces[emptyIndex - (i - row) * size] = pieces[emptyIndex - (i - row + 1) * size];
+          }
+          pieces[emptyIndex - (emptyRow - row) * size] = null;
+          emptyIndex = emptyIndex - (emptyRow - row) * size;
+        } else {
+          for (let i = emptyRow; i < row; i++) {
+            pieces[emptyIndex + (i - emptyRow) * size] = pieces[emptyIndex + (i - emptyRow + 1) * size];
+          }
+          pieces[emptyIndex + (row - emptyRow) * size] = null;
+          emptyIndex = emptyIndex + (row - emptyRow) * size;
+        }
+      }
+      record.push(index);
+      renderBoard();
+      if (isSortedAscending(pieces)) {
+        stopTimer();
+        //延迟显示结果
+        setTimeout(() => {
+          if (!isRecord) {
+            let records = localStorage.getItem("records");
+            let recordsJson = [];
+            let recordJson = {
+              name: size + "阶" + "步数" + timesDisplay.textContent + "用时" + timerDisplay.textContent, //+new Date().getTime(),
+              record: [...record],
+              customArray: [...piecesOld],
+            };
+            if (records) {
+              recordsJson = JSON.parse(records);
+            }
+            recordsJson.push(recordJson);
+            localStorage.setItem("records", JSON.stringify(recordsJson));
+          }
+          document.getElementById("board").classList.add("no-click");
+          createFireworks();
+          setTimeout(() => {
+            victoryTextElement.classList.remove("glow-text");
+          }, 2500);
+          //setTimeout(() => alert('你赢了！'), 500);
+        }, 100);
+      }
+    }
+  }
+
+  function isSortedAscending(arr) {
+    for (let i = 0; i < arr.length - 2; i++) {
+      if (arr[i] !== null && arr[i + 1] !== null && arr[i] > arr[i + 1]) {
+        return false; // 如果当前元素大于下一个元素，则不是升序排序
+      }
+    }
+    if (arr[arr.length - 1] === null) {
+      return true; // 所有元素都符合升序条件
+    } else {
+      return false;
+    }
+  }
+
+  startRenderBoard();
+
+  function selectButton(button, value) {
+    clearVictoryEffects();
+    isRecord = false;
+    // 取消所有按钮的选中状态
+    const buttons = document.querySelectorAll(".button-group .button");
+    buttons.forEach((btn) => {
+      btn.classList.remove("selected");
+    });
+    // 设置当前按钮为选中状态
+    button.classList.add("selected");
+    console.log(`选中的是: ${value}阶`);
+    size = value;
+    pieces = [];
+    for (let i = 1; i < size * size; i++) {
+      pieces.push(i);
+    }
+    pieces.push(null);
+    piecesOld = [...pieces];
+    emptyIndex = size * size - 1;
+    startRenderBoard();
+    resetTimer();
+  }
+
+  function reset() {
+    clearVictoryEffects();
+    isRecord = false;
+    pieces = [...piecesOld];
+    emptyIndex = size * size - 1;
+    startRenderBoard();
+    resetTimer();
+  }
+
+  function refresh() {
+    clearVictoryEffects();
+    isRecord = false;
+    piecesOld = generateRandomArray();
+    pieces = [...piecesOld];
+    emptyIndex = size * size - 1;
+    startRenderBoard();
+    resetTimer();
+  }
+  function generateRandomArray() {
+    const totalCells = size * size - 1; // 除去空白块的总数字数
+    let array;
+    let inversionCount;
+    let blankRow;
+    let isSolvable;
+
+    do {
+      // 生成随机排列（含空白块null）
+      array = Array.from({ length: totalCells }, (_, i) => i + 1);
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      array.push(null); // 添加空白块
+      const emptyIndex = array.indexOf(null);
+
+      // 计算逆序数（排除空白块）
+      const arrWithoutNull = array.filter((x) => x !== null);
+      inversionCount = calculateInversionCount(arrWithoutNull);
+      // 判断是否可解
+      isSolvable = inversionCount % 2 === 0;
+    } while (!isSolvable); // 不可解则重新生成
+
+    return array;
+  }
+  function calculateInversionCount(arr) {
+    let inversions = 0;
+    for (let i = 0; i < arr.length - 1; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        if (arr[i] !== null && arr[j] !== null && arr[i] > arr[j]) {
+          inversions++;
+        }
+      }
+    }
+    return inversions;
+  }
+
+  function custom() {
+    clearVictoryEffects();
+    document.getElementById("recordList").style.display = "none";
+    isRecord = false;
+    clearInterval(intervalIdRecord);
+    const myModal = document.getElementById("myModal");
+    myModal.style.display = "flex";
+    const board = document.getElementById("board");
+    board.style.display = "none";
+    let yName = "";
+    if (size === 3) {
+      yName = "3阶";
+    } else if (size === 4) {
+      yName = "4阶";
+    } else if (size === 5) {
+      yName = "5阶";
+    }
+    yName = yName + formatTime(new Date().getTime());
+    document.getElementById("customName").value = yName;
+    document.getElementById("memoryList").style.display = "none";
+    const modalContent = document.getElementById("modalContent");
+    modalContent.innerHTML = "";
+    const numButtonGroup = document.getElementById("num-button-group");
+    numButtonGroup.innerHTML = "";
+    for (let i = 1; i < size * size; i++) {
+      const pieceElement = document.createElement("div");
+      pieceElement.className = "piece";
+      pieceElement.textContent = " ";
+      modalContent.style.gridTemplateColumns = `repeat(${size}, ${pieceSize}px)`;
+      modalContent.style.gridTemplateRows = `repeat(${size}, ${pieceSize}px)`;
+      pieceElement.onclick = () => selectedItem(pieceElement);
+      modalContent.appendChild(pieceElement);
+
+      const numElement = document.createElement("div");
+      numElement.className = "piece";
+      numElement.textContent = i + "";
+      numButtonGroup.style.gridTemplateColumns = `repeat(${8}, 40px)`;
+      numButtonGroup.style.gridTemplateRows = `repeat(${3}, 40px)`;
+      numElement.onclick = () => selectedNum(i);
+      numButtonGroup.appendChild(numElement);
+    }
+  }
+
+  function memory() {
+    const customArrays = localStorage.getItem("customArrays");
+    console.log(customArrays);
+    if (customArrays) {
+      customArraysJson = JSON.parse(customArrays);
+      piecesOld = customArraysJson[0].customArray;
+      size = customArraysJson[0].customSize;
+      pieces = [...piecesOld];
+      emptyIndex = size * size - 1;
+      startRenderBoard();
+
+      const buttons = document.querySelectorAll(".button-group .button");
+      buttons.forEach((btn) => {
+        if (btn.textContent === size + "阶") {
+          btn.classList.add("selected");
+        } else {
+          btn.classList.remove("selected");
+        }
+      });
+      resetTimer();
+    }
+  }
+
+  function cancel() {
+    const myModal = document.getElementById("myModal");
+    myModal.style.display = "none";
+    const board = document.getElementById("board");
+    board.style.display = "grid";
+  }
+
+  function save() {
+    const items = document.querySelectorAll("#modalContent div");
+    // 保存自定义的数组
+    const customArray = [];
+    items.forEach((item) => {
+      customArray.push(parseInt(item.innerHTML));
+    });
+    // 判断是否有空缺的数字
+    if (customArray.includes(NaN)) {
+      alert("有空缺的数字，请重新输入");
+      return;
+    }
+    // 判断是否有重复的数字
+    const set = new Set(customArray);
+    if (set.size !== customArray.length) {
+      alert("有重复的数字，请重新输入");
+      return;
+    }
+    customArray.push(null);
+    console.log(customArray);
+    // 保存到本地存储
+    let customName = document.getElementById("customName").value;
+    if (!customName) {
+      alert("名称不能为空");
+      return;
+    }
+    const customArraysStr = localStorage.getItem("customArrays");
+    let customArraysJson = [];
+    if (customArraysStr) {
+      customArraysJson = JSON.parse(customArraysStr);
+
+      const hasName = customArraysJson.some((item) => item.name === customName);
+      if (hasName) {
+        alert("名称已存在");
+        return;
+      }
+    }
+    var customArrayJson = { name: customName, customArray: customArray, customSize: size };
+    customArraysJson.push(customArrayJson);
+    localStorage.setItem("customArrays", JSON.stringify(customArraysJson));
+    cancel();
+  }
+
+  let customItem = null;
+
+  function selectedItem(item) {
+    const items = document.querySelectorAll("#modalContent div");
+    items.forEach((it) => {
+      it.style.backgroundColor = "#4CAF50";
+    });
+    item.style.backgroundColor = "orange";
+    customItem = item;
+  }
+
+  function selectedNum(index) {
+    customItem.innerHTML = index;
+  }
+
+  let timer = 0;
+  let intervalId;
+  const timerDisplay = document.getElementById("timerDisplay");
+  const timesDisplay = document.getElementById("timesDisplay");
+
+  function updateDisplay() {
+    const hours = Math.floor(timer / 3600); // 计算小时
+    const minutes = Math.floor((timer % 3600) / 60); // 计算分钟
+    const seconds = timer % 60; // 计算秒数
+    // 格式化显示为两位数，例如 01:02:03
+    timerDisplay.textContent = String(hours).padStart(2, "0") + ":" + String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+  }
+
+  // 开始计时
+  const startTimer = () => {
+    if (!intervalId) {
+      // 防止重复启动
+      intervalId = setInterval(() => {
+        timer++;
+        updateDisplay();
+      }, 1000); // 每秒增加
+    }
+  };
+
+  // 停止计时
+  const stopTimer = () => {
+    clearInterval(intervalId);
+    intervalId = null; // 清空 ID，允许后续重新开始
+  };
+
+  // 重置计时
+  const resetTimer = () => {
+    clearInterval(intervalId);
+    intervalId = null; // 清空 ID
+    timer = 0; // 重置计时器
+    timesDisplay.textContent = 0; // 重置次数
+    updateDisplay(); // 更新显示
+  };
+  document.addEventListener("selectstart", function (event) {
+    event.preventDefault();
+  });
+  document.addEventListener("dblclick", function (event) {
+    event.preventDefault();
+  });
+
+  function memoryList() {
+    clearVictoryEffects();
+    clearInterval(intervalIdRecord);
+    document.getElementById("board").style.display = "none";
+    document.getElementById("myModal").style.display = "none";
+    document.getElementById("recordList").style.display = "none";
+
+    const customArrays = localStorage.getItem("customArrays");
+    console.log(customArrays);
+    // 获取div元素
+    var div = document.getElementById("memoryList");
+    div.style.display = "block";
+    div.innerHTML = "";
+    if (customArrays && customArrays.length > 0) {
+      customArraysJson = JSON.parse(customArrays);
+      if (customArraysJson.length > 0) {
+        // 创建一个列表元素
+        var ul = document.createElement("ul");
+
+        // 向列表中添加项目
+        customArraysJson.forEach(function (item) {
+          var li = document.createElement("li");
+          li.textContent = item.name;
+          // 添加删除按钮
+          const deleteBtn = document.createElement("span");
+          deleteBtn.className = "delete-btn";
+          deleteBtn.textContent = "X";
+          deleteBtn.onclick = (event) => {
+            event.stopPropagation(); // 阻止冒泡，以免触发选中事件
+            ul.removeChild(li);
+
+            const customArraysStr = localStorage.getItem("customArrays");
+            if (customArraysStr) {
+              customArraysJson = JSON.parse(customArraysStr);
+              customArraysJson = customArraysJson.filter((p) => p.name !== item.name);
+            }
+            localStorage.setItem("customArrays", JSON.stringify(customArraysJson));
+          };
+          li.appendChild(deleteBtn);
+          ul.appendChild(li);
+
+          // 选中事件
+          li.onclick = () => {
+            console.log(li);
+            GetMemory(item);
+          };
+        });
+
+        // 将列表添加到div中
+        div.appendChild(ul);
+      } else {
+        div.innerHTML = "暂无自定义题目";
+      }
+    } else {
+      div.innerHTML = "暂无自定义题目";
+    }
+  }
+
+  function GetMemory(item) {
+    isRecord = false;
+    piecesOld = item.customArray;
+    size = item.customSize;
+    pieces = [...piecesOld];
+    emptyIndex = size * size - 1;
+    startRenderBoard();
+
+    const buttons = document.querySelectorAll(".button-group .button");
+    buttons.forEach((btn) => {
+      if (btn.textContent === size + "阶") {
+        btn.classList.add("selected");
+      } else {
+        btn.classList.remove("selected");
+      }
+    });
+    resetTimer();
+
+    document.getElementById("memoryList").style.display = "none";
+  }
+
+  function recordList() {
+    clearVictoryEffects();
+    clearInterval(intervalIdRecord);
+    document.getElementById("board").style.display = "none";
+    document.getElementById("myModal").style.display = "none";
+    document.getElementById("memoryList").style.display = "none";
+    const recordList = document.getElementById("recordList");
+    recordList.style.display = "block";
+    recordList.innerHTML = "";
+    const records = localStorage.getItem("records");
+    let recordsJson = [];
+    if (records) {
+      recordsJson = JSON.parse(records);
+      if (recordsJson.length > 0) {
+        // 创建一个列表元素
+        var ul = document.createElement("ul");
+
+        // 向列表中添加项目
+        recordsJson.forEach(function (item) {
+          var li = document.createElement("li");
+          li.textContent = item.name; //formatTime(item.name);
+          // 添加删除按钮
+          const deleteBtn = document.createElement("span");
+          deleteBtn.className = "delete-btn";
+          deleteBtn.textContent = "X";
+          deleteBtn.onclick = (event) => {
+            event.stopPropagation(); // 阻止冒泡，以免触发选中事件
+            ul.removeChild(li);
+            recordsJson = recordsJson.filter((p) => p.name !== item.name);
+            localStorage.setItem("records", JSON.stringify(recordsJson));
+          };
+          li.appendChild(deleteBtn);
+          ul.appendChild(li);
+
+          // 选中事件
+          li.onclick = () => {
+            console.log(li);
+            isRecord = true;
+            GetRecord(item);
+          };
+        });
+
+        // 将列表添加到div中
+        recordList.appendChild(ul);
+      } else {
+        recordList.innerHTML = "暂无记录";
+      }
+    } else {
+      recordList.innerHTML = "暂无记录";
+    }
+  }
+
+  var intervalIdRecord = null;
+  var isRecord = false;
+
+  function GetRecord(item) {
+    piecesOld = item.customArray;
+    size = Math.sqrt(item.customArray.length);
+    pieces = [...piecesOld];
+    // 记录索引
+    emptyIndex = pieces.indexOf(null);
+    startRenderBoard();
+
+    document.getElementById("board").classList.add("no-click");
+    const buttons = document.querySelectorAll(".button-group .button");
+    buttons.forEach((btn) => {
+      if (btn.textContent === size + "阶") {
+        btn.classList.add("selected");
+      } else {
+        btn.classList.remove("selected");
+      }
+    });
+    resetTimer();
+    document.getElementById("recordList").style.display = "none";
+    let recordIndex = item.record;
+    // 当前记录的索引
+    let cIndex = 0;
+    // 每秒钟调用一次移动函数
+    intervalIdRecord = setInterval(() => {
+      if (cIndex < recordIndex.length) {
+        movePiece(recordIndex[cIndex]);
+        cIndex++;
+      } else {
+        clearInterval(intervalIdRecord);
+      }
+    }, 500);
+  }
+
+  // ================== 粒子系统配置 ==================
+  const FIREWORK_CONFIG = {
+    PARTICLE_COUNT: 500,
+    SPARK_LIFE: 2, // 缩短生命周期
+    COLORS: ["#FF1461", "#18FF92", "#5A87FF", "#FBF38C"],
+  };
+
+  // ================== Canvas初始化 ==================
+  const canvas = document.getElementById("fireworkCanvas");
+  const ctx = canvas.getContext("2d");
+
+  // ================== 粒子类 ==================
+  class Particle {
+    constructor(x, y) {
+      this.angle = Math.random() * Math.PI * 2;
+      this.speed = Math.random() * 5 + 3;
+      this.x = x;
+      this.y = y;
+      this.color = FIREWORK_CONFIG.COLORS[Math.floor(Math.random() * 4)];
+      this.life = 0;
+      this.maxLife = FIREWORK_CONFIG.SPARK_LIFE;
+    }
+
+    update() {
+      // 只保留扩散逻辑
+      this.x += Math.cos(this.angle) * this.speed;
+      this.y += Math.sin(this.angle) * this.speed;
+      this.life += 0.016;
+      return this.life < this.maxLife;
+    }
+
+    draw(ctx) {
+      // 关键修复：限制 progress 最大值为 1
+      const progress = Math.min(this.life / this.maxLife, 1);
+      ctx.beginPath();
+      ctx.arc(
+        this.x,
+        this.y,
+        Math.max(3 * (1 - progress), 0), // 确保半径不小于0
+        0,
+        Math.PI * 2
+      );
+      ctx.fillStyle = this.color;
+      ctx.globalAlpha = 1 - progress;
+      ctx.fill();
+    }
+  }
+
+  // ================== 动画系统 ==================
+  let particles = [];
+  let victoryTextElement = document.getElementById("victoryText");
+  let textBounds;
+
+  function createFireworks() {
+    // 显示文字动画
+    victoryTextElement.textContent = "胜利";
+    victoryTextElement.style.opacity = 1;
+    victoryTextElement.classList.add("glow-text");
+
+    // 生成粒子
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+
+    particles = [];
+    for (let i = 0; i < FIREWORK_CONFIG.PARTICLE_COUNT; i++) {
+      particles.push(new Particle(centerX, centerY));
+    }
+
+    // 启动动画循环
+    requestAnimationFrame(animate);
+  }
+  let animationFrameId = null; // 新增动画帧ID记录
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    particles = particles.filter((p) => {
+      const isAlive = p.life < p.maxLife; // 明确生命周期判断
+      if (isAlive) {
+        p.update();
+        p.draw(ctx);
+      }
+      return isAlive;
+    });
+
+    if (particles.length > 0) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
+  }
+  // ================== 重置画布尺寸 ==================
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+  // ======== 清理函数 ========
+  function clearVictoryEffects() {
+    // 停止可能存在的动画循环
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+
+    // 清空Canvas
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 重置粒子数组
+    particles = [];
+
+    // 隐藏胜利文字
+    const victoryText = document.getElementById("victoryText");
+    victoryText.style.opacity = "0";
+    victoryText.classList.remove("glow-text");
+  }
+
+  function closeHelp() {
+    const helpContents = document.getElementById("helpContents");
+    helpContents.style.display = "none";
+  }
+
+  function formatTime(timestamp) {
+    const date = new Date(timestamp); // 创建日期对象
+
+    const year = date.getFullYear(); // 获取年份
+    const month = ("0" + (date.getMonth() + 1)).slice(-2); // 获取月份（注意月份从0开始，需加1并格式化为两位数）
+    const day = ("0" + date.getDate()).slice(-2); // 获取日期，并格式化为两位数
+    const hours = ("0" + date.getHours()).slice(-2); // 获取小时，并格式化为两位数
+    const minutes = ("0" + date.getMinutes()).slice(-2); // 获取分钟，并格式化为两位数
+    const seconds = ("0" + date.getSeconds()).slice(-2); // 获取秒数，并格式化为两位数
+
+    // 拼接格式为 YYYY-MM-DD HH:mm:ss
+    const formattedDateTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    return formattedDateTime;
+  }
+
+  function showHelp() {
+    clearVictoryEffects();
+    clearInterval(intervalIdRecord);
+    //弹窗
+    const helpContents = document.getElementById("helpContents");
+    helpContents.style.display = "block";
+
+    const helpContent = document.getElementById("helpContent");
+    helpContent.innerHTML = `
+        <h4>操作说明</h4>
+        <h5>点击数字，进行移动。</h5>
+        <h5>开始移动时，计时器会开始计时。</h5>
+        <h5>每点击一次数字，计数器加1。</h5>
+        <p>点击“3阶”、“4阶”、“5阶”按钮，选择游戏阶数。</p>
+        <p>点击“重置”按钮，重置当前游戏。</p>
+        <p>点击“随机”按钮，随机生成一个新题目。</p>
+        <p>点击“记忆”按钮，查看自定义题目列表。</p>
+        <p>点击题目列表名称，开始游戏。</p>
+        <p>点击题目列表“X”按钮，删除自定义题目</p>
+        <p>点击“回放”按钮，查看操作记录列表。</p>
+        <p>点击回放列表数据，回放操作记录。</p>
+        <p>点击回放列表“X”按钮，删除自定义题目</p>
+        <p>点击“自定义”按钮，自定义一个题目。</p>
+        <p>点击“保存”按钮，保存自定义的题目。保存再浏览器缓存中。清空浏览器缓存后，自定义题目也会清除。</p>
+        <p>点击“取消”按钮，取消自定义。</p>
+        <p>点击“？”按钮，查看帮助信息。</p>
+        <h4>更新日志</h4>
+        <h5>2024-10-15 v3.0发布</h5>
+        <p>增加自定义多个题目功能。</p>
+        <p>增加记忆列表功能。</p>
+        <p>增加回放记录功能。</p>
+        <p>增加帮助信息功能。</p>
+        <p>游戏结束禁止移动。</p>
+        <p>优化界面显示。</p>
+        <h5>2025-01-23 v4.0发布</h5>
+        <p>增加逆序数奇偶性验证，随机题目检查是否可解题目。</p>
+        <p>增加完成胜利动画效果。</p>
+        <p>修复随机题目完成回放移动错误。</p>
+        `;
+    helpContents.appendChild(helpContent);
+  }
+</script>
+
+<script>
+  // ================== 界面控制逻辑 ==================
+  let isSolving = false; // 求解状态标志
+  let cancelRequested = false; // 取消标志
+  /**
+   * 切换界面元素状态
+   * @param {Boolean} disabled 是否禁用界面
+   */
+  function toggleUIState(disabled) {
+    // 禁用/启用所有按钮
+    document.querySelectorAll(".button").forEach((btn) => {
+      btn.disabled = disabled;
+      btn.style.opacity = disabled ? 0.5 : 1; // 透明度变化提示状态
+    });
+    // 禁用/启用棋盘点击
+    document.getElementById("board").style.pointerEvents = disabled ? "none" : "all";
+  }
+  /**
+   * 自动求解入口函数
+   */
+  function autoSolve() {
+    if (isSolving) return; // 防止重复点击
+
+    isSolving = true;
+    cancelRequested = false; // 重置取消标志
+    toggleUIState(true); // 锁定界面
+
+    isRecord = false;
+    const loading = document.getElementById("loading");
+    loading.style.display = "block"; // 显示加载动画
+
+    // 异步执行求解（避免阻塞主线程）
+    var beginBoard = [];
+    var beginBoards = [];
+    var beginTemp = [...pieces];
+
+    for (var i = 0; i < size; i++) {
+      beginBoard = beginTemp.splice(0, size);
+      beginBoards.push(beginBoard);
+    }
+    // 将null值替换为0
+    beginBoards = beginBoards.map((row) => row.map((c) => c || 0));
+    var endBoard = [];
+    if (size === 3) {
+      endBoard = [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 0],
+      ];
+    } else if (size === 4) {
+      endBoard = [
+        [1, 2, 3, 4],
+        [5, 6, 7, 8],
+        [9, 10, 11, 12],
+        [13, 14, 15, 0],
+      ];
+    } else if (size === 5) {
+      endBoard = [
+        [1, 2, 3, 4, 5],
+        [6, 7, 8, 9, 10],
+        [11, 12, 13, 14, 15],
+        [16, 17, 18, 19, 20],
+        [21, 22, 23, 24, 0],
+      ];
+    }
+    // 使用 Promise 和 setTimeout 拆分求解过程
+    const solveTask = new Promise((resolve) => {
+      setTimeout(() => {
+        if (cancelRequested) {
+          resolve(null);
+          return;
+        }
+
+        // 此处为原有求解逻辑（需拆分循环检查取消标志）
+        // 开始时间
+        const startTime = new Date().getTime();
+        const solution = aStarSearch(beginBoards, endBoard);
+        // 结束时间
+        const endTime = new Date().getTime();
+        console.log(`求解耗时：${(endTime - startTime) / 1000}秒`);
+        resolve(solution);
+      }, 100);
+    });
+    solveTask.then((solution) => {
+      isSolving = false;
+      loading.style.display = "none";
+      toggleUIState(false);
+
+      if (solution && !cancelRequested) {
+        // 保存为回放记录并播放
+
+        // 输出结果
+        const path = [];
+        var currentRecord = [];
+        let current = solution;
+        while (current) {
+          path.push(current.board);
+          currentRecord.push(current.zeroIndex);
+          current = current.previous;
+        }
+        path.reverse().forEach((board, step) => {
+          console.log(`Step ${step}:`);
+          console.log(board);
+        });
+        // 移除最后元素
+        currentRecord.pop();
+        currentRecord.reverse();
+        const autoRecord = {
+          record: currentRecord,
+          customArray: [...pieces],
+        };
+
+        GetRecord(autoRecord);
+      } else if (cancelRequested) {
+        console.log("求解已取消");
+      } else {
+        alert("求解失败");
+      }
+    });
+  }
+  // 新增取消函数
+  function cancelSolve() {
+    if (isSolving) {
+      cancelRequested = true;
+      isSolving = false;
+      document.getElementById("loading").style.display = "none";
+      toggleUIState(false);
+    }
+  }
+</script>
+<script>
+  class PuzzleState {
+    constructor(board, zeroIndex, moves = 0, previous = null, hValue = null, movedNum = null, oldPos = null, newPos = null) {
+      this.board = board.slice(); // 一维数组浅拷贝
+      this.zeroIndex = zeroIndex;
+      this.moves = moves;
+      this.previous = previous;
+      this.sizeVal = Math.sqrt(board.length);
+
+      if (previous && hValue !== null && movedNum !== null) {
+        // 增量计算启发值
+        const targetIndex = movedNum - 1;
+        const oldDistance = this.manhattan(oldPos, targetIndex);
+        const newDistance = this.manhattan(newPos, targetIndex);
+        this.hValue = previous.hValue - oldDistance + newDistance;
+      } else {
+        this.hValue = this.calculateHeuristic();
+      }
+
+      this.cost = this.moves + this.hValue;
+    }
+
+    manhattan(pos, target) {
+      const size = this.sizeVal;
+      const row = Math.floor(pos / size);
+      const col = pos % size;
+      const tRow = Math.floor(target / size);
+      const tCol = target % size;
+      return Math.abs(row - tRow) + Math.abs(col - tCol);
+    }
+
+    calculateHeuristic() {
+      let distance = 0;
+      for (let i = 0; i < this.board.length; i++) {
+        const num = this.board[i];
+        if (num !== 0) distance += this.manhattan(i, num - 1);
+      }
+      return distance;
+    }
+
+    generateChildren() {
+      const children = [];
+      const directions = [
+        { dx: 1, dy: 0 }, // 下
+        { dx: -1, dy: 0 }, // 上
+        { dx: 0, dy: 1 }, // 右
+        { dx: 0, dy: -1 }, // 左
+      ];
+
+      const zeroRow = Math.floor(this.zeroIndex / this.sizeVal);
+      const zeroCol = this.zeroIndex % this.sizeVal;
+
+      for (const dir of directions) {
+        const newRow = zeroRow + dir.dx;
+        const newCol = zeroCol + dir.dy;
+
+        if (newRow >= 0 && newRow < this.sizeVal && newCol >= 0 && newCol < this.sizeVal) {
+          const newIndex = newRow * this.sizeVal + newCol;
+          const newBoard = this.board.slice();
+          [newBoard[this.zeroIndex], newBoard[newIndex]] = [newBoard[newIndex], newBoard[this.zeroIndex]];
+          const movedNum = this.board[newIndex];
+
+          const child = new PuzzleState(
+            newBoard,
+            newIndex,
+            this.moves + 1,
+            this,
+            null, // hValue由构造函数计算
+            movedNum,
+            newIndex, // 旧位置
+            this.zeroIndex // 新位置
+          );
+          children.push(child);
+        }
+      }
+      return children;
+    }
+  }
+
+  class PriorityQueue {
+    constructor() {
+      this.heap = [];
+    }
+
+    push(element) {
+      this.heap.push(element);
+      this.bubbleUp(this.heap.length - 1);
+    }
+
+    pop() {
+      const min = this.heap[0];
+      const end = this.heap.pop();
+      if (this.heap.length) {
+        this.heap[0] = end;
+        this.sinkDown(0);
+      }
+      return min;
+    }
+
+    bubbleUp(index) {
+      const element = this.heap[index];
+      while (index > 0) {
+        const parentIdx = Math.floor((index - 1) / 2);
+        if (this.heap[parentIdx].cost <= element.cost) break;
+        [this.heap[parentIdx], this.heap[index]] = [element, this.heap[parentIdx]];
+        index = parentIdx;
+      }
+    }
+
+    sinkDown(index) {
+      const length = this.heap.length;
+      const element = this.heap[index];
+      while (true) {
+        let leftIdx = 2 * index + 1;
+        let rightIdx = 2 * index + 2;
+        let swapIdx = null;
+
+        if (leftIdx < length && this.heap[leftIdx].cost < element.cost) {
+          swapIdx = leftIdx;
+        }
+        if (rightIdx < length && (swapIdx === null || this.heap[rightIdx].cost < this.heap[leftIdx].cost)) {
+          swapIdx = rightIdx;
+        }
+        if (!swapIdx) break;
+        [this.heap[index], this.heap[swapIdx]] = [this.heap[swapIdx], element];
+        index = swapIdx;
+      }
+    }
+
+    isEmpty() {
+      return this.heap.length === 0;
+    }
+  }
+
+  function aStarSearch(startBoard2D, goalBoard2D) {
+    const startBoard = startBoard2D.flat();
+    const goalBoard = goalBoard2D.flat();
+    const zeroIndex = startBoard.indexOf(0);
+    const startState = new PuzzleState(startBoard, zeroIndex);
+
+    const openSet = new PriorityQueue();
+    openSet.push({ cost: startState.cost, state: startState });
+    const closedSet = new Set();
+
+    while (!openSet.isEmpty() && !cancelRequested) {
+      const current = openSet.pop().state;
+
+      if (JSON.stringify(current.board) === JSON.stringify(goalBoard)) {
+        return current;
+      }
+
+      closedSet.add(current.board.join(","));
+
+      for (const child of current.generateChildren()) {
+        const childKey = child.board.join(",");
+        if (closedSet.has(childKey)) continue;
+
+        openSet.push({ cost: child.cost, state: child });
+      }
+    }
+    return null;
+  }
+
+  // 测试用例
+  // const startBoard = [
+  //   [1, 2, 3, 4],
+  //   [5, 6, 7, 8],
+  //   [9, 10, 0, 11],
+  //   [13, 14, 15, 12],
+  // ];
+  // const startBoard = [
+  //   [5, 1, 2, 4],
+  //   [9, 6, 3, 8],
+  //   [13, 10, 7, 11],
+  //   [0, 14, 15, 12],
+  // ];
+  // const startBoard = [
+  //   [10, 12, 15, 11],
+  //   [14, 7, 4, 6],
+  //   [1, 3, 8, 5],
+  //   [9, 13, 2, 0],
+  // ];
+
+  // const startBoard = [
+  //   [4, 10, 11, 14],
+  //   [15, 5, 3, 7],
+  //   [13, 12, 1, 2],
+  //   [8, 9, 6, 0],
+  // ];
+  // const goalBoard = [
+  //   [1, 2, 3, 4],
+  //   [5, 6, 7, 8],
+  //   [9, 10, 11, 12],
+  //   [13, 14, 15, 0],
+  // ];
+  // const solution = aStarSearch(startBoard, goalBoard);
+
+  // if (solution) {
+  //   const path = [];
+  //   let current = solution;
+  //   while (current) {
+  //     path.push(current.board);
+  //     current = current.previous;
+  //   }
+  //   path.reverse().forEach((board, step) => {
+  //     console.log(`Step ${step}:`);
+  //     const size = Math.sqrt(board.length);
+  //     const twoD = [];
+  //     for (let i = 0; i < size; i++) {
+  //       twoD.push(board.slice(i * size, (i + 1) * size));
+  //     }
+  //     console.log(twoD.map((row) => row.join(" ")).join("\n") + "\n");
+  //   });
+  // } else {
+  //   console.log("无解");
+  // }
+</script>
+
+<style>
+  body {
+    height: 90vh;
+    background-color: #f0f0f0;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  #board {
+    margin: 5px;
+    padding: 5px;
+    display: grid;
+    gap: 5px;
+    border: 3px solid orange;
+  }
+
+  .piece {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #4caf50;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+  }
+
+  .empty {
+    background-color: transparent;
+    cursor: default;
+  }
+
+  .button-group {
+    display: flex;
+    justify-content: center;
+    /* 水平居中 */
+    align-items: center;
+    /* 垂直居中 */
+    gap: 10px;
+    /* 按钮之间的间隔 */
+  }
+
+  .button {
+    padding: 5px 10px;
+    font-size: 24px;
+    color: white;
+    background-color: #a6e299;
+    /* 默认背景色 */
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+
+  .button.selected {
+    background-color: #2ac709;
+    /* 选中状态的背景色 */
+  }
+
+  .button:hover {
+    background-color: #2ac709;
+    /* 悬停状态的背景色 */
+  }
+
+  .container {
+    flex-direction: column;
+    display: flex;
+    /* justify-content: center;  */
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    margin-top: 70px;
+  }
+
+  #modalContent {
+    margin: 10px;
+    padding: 5px;
+    display: grid;
+    gap: 5px;
+    border: 3px solid orange;
+  }
+
+  #num-button-group {
+    margin: 10px;
+    padding: 5px;
+    display: grid;
+    gap: 5px;
+  }
+
+  .save-button-group {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .save-button-group button {
+    margin: 10px;
+  }
+
+  #myModal {
+    flex-direction: column;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .button-group-tools {
+    margin: 5px;
+    display: flex;
+    justify-content: center;
+    /* 水平居中 */
+    align-items: center;
+    /* 垂直居中 */
+    gap: 5px;
+    /* 按钮之间的间隔 */
+  }
+
+  .button-group-tools button {
+    font-size: 16px;
+  }
+
+  .timeDisplay {
+    display: block;
+    display: flex;
+  }
+
+  #timerDisplay {
+    display: flex;
+    font-size: 16px;
+    color: rgb(32, 103, 235);
+    background-color: #a6e299;
+    border: 1px solid gray;
+    width: 100px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #timesDisplay {
+    color: rgb(32, 103, 235);
+    background-color: #a6e299;
+    border: 1px solid gray;
+    width: 50px;
+    margin-left: 50px;
+    display: flex;
+    font-size: 16px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #memoryList ul {
+    margin-left: -40px;
+    list-style: none;
+  }
+
+  #memoryList ul li {
+    border: 1px solid gray;
+    padding: 5px;
+    margin: 5px;
+    font-size: 16px;
+    height: 28px;
+    line-height: 28px;
+    width: 250px;
+  }
+
+  #memoryList ul li:hover {
+    background-color: #c5eee5;
+  }
+
+  .delete-btn {
+    float: right;
+    height: 20px;
+    line-height: 20px;
+    border: none;
+    border-radius: 5px;
+    color: rgb(255, 0, 0);
+    padding: 5px 10px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+
+  .delete-btn:hover {
+    background-color: #f1aa9e;
+  }
+
+  .nameDiv {
+    margin: 5px;
+  }
+
+  .helpDiv {
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    border-radius: 50%;
+    background-color: #f8c463;
+    color: white;
+    /* 白色文字 */
+    text-align: center;
+    /* 文本居中 */
+    font-size: 14px;
+    /* 字体大小 */
+    font-weight: bold;
+    cursor: pointer;
+    /* 鼠标指针样式 */
+    margin-left: 40px;
+  }
+
+  .helpContents {
+    float: left;
+    display: none;
+    position: absolute;
+    top: 50px;
+    background-color: #fae9c9;
+    border: 1px solid gray;
+    padding: 10px;
+    z-index: 999;
+    width: 90%;
+    height: 80%;
+    overflow: auto;
+  }
+
+  .closeBtn {
+    float: right;
+    height: 20px;
+    line-height: 20px;
+    color: rgb(255, 0, 0);
+    padding: 5px 10px;
+    font-size: 30px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+
+  .no-click {
+    pointer-events: none;
+    /* 禁止所有点击事件 */
+    opacity: 0.9;
+    /* 可选：改变透明度以表示不可点击 */
+  }
+
+  #recordList ul {
+    margin-left: -40px;
+    list-style: none;
+  }
+
+  #recordList ul li {
+    border: 1px solid gray;
+    padding: 5px;
+    margin: 5px;
+    font-size: 16px;
+    height: 28px;
+    line-height: 28px;
+    width: 250px;
+  }
+
+  #recordList ul li:hover {
+    background-color: #c5eee5;
+  }
+
+  #recordList ul li .delete-btn {
+    float: right;
+    height: 20px;
+    line-height: 20px;
+    border: none;
+    border-radius: 5px;
+    color: rgb(255, 0, 0);
+    padding: 5px 10px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+
+  #recordList ul li .delete-btn:hover {
+    background-color: #f1aa9e;
+  }
+
+  #fireworkCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* 新增文字动画样式 */
+  #victoryText {
+    position: fixed;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 50pt;
+    font-weight: bold;
+    font-family: "Microsoft YaHei", sans-serif;
+    text-shadow: 0 0 20px #96a82b;
+    pointer-events: none;
+    z-index: 2000;
+    /* 半透明字 */
+    color: rgba(247, 255, 43, 0.8);
+  }
+
+  .glow-text {
+    animation: textGlow 2s ease-out forwards;
+  }
+
+  /* 新增文字渐入渐出效果 */
+  @keyframes textGlow {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(5);
+      filter: blur(30px);
+    }
+
+    30% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+      filter: blur(0);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+
+  /* 新增加载动画样式 */
+  #loading {
+    width: 150px;
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    padding: 20px;
+    border-radius: 10px;
+    color: white;
+    text-align: center;
+    z-index: 9999;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    margin: 10px auto;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+  /* 加载弹窗中的取消按钮 */
+  #loading .cancel-btn {
+    margin-top: 20px;
+    background-color: #ff4444; /* 警示红色 */
+    padding: 5px 10px;
+    font-size: 24px;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+</style>
